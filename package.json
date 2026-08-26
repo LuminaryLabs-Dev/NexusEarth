@@ -2,9 +2,16 @@
   "name": "nexus-earth",
   "version": "1.0.0",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node --test"
+  },
   "dependencies": {
     "next": "15.5.24",
+    "proj4": "^2.19.10",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "three": "0.180.0"

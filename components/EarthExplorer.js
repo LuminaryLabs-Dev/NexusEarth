@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { isLatestTextureResponse } from "../lib/earth-imagery/gibs.js";
 
-const NASA_WMS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";
-const FALLBACK_TEXTURE = "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r180/examples/textures/planets/earth_atmos_2048.jpg";
+const BASE_TEXTURE_PATH = "textures/earth-base-2048.jpg";
+const MAX_CACHED_DATES = 3;
 const locations = [
   ["Whole Earth", 15, -25, 3.15], ["Amazon Basin", -4, -62, 2.25],
   ["California", 37, -120, 2.05], ["Greenland", 72, -40, 2.2],
@@ -13,16 +14,6 @@ const locations = [
   ["Himalayas", 29, 85, 2.05], ["Southeast Asia", 10, 106, 2.15],
   ["Australia", -25, 134, 2.25], ["Antarctica", -78, 15, 2.25]
 ].map(([name, lat, lon, zoom]) => ({ name, lat, lon, zoom }));
-
-function observationUrl(date) {
-  const params = new URLSearchParams({
-    service: "WMS", request: "GetMap", version: "1.1.1",
-    layers: "VIIRS_NOAA20_CorrectedReflectance_TrueColor", styles: "",
-    format: "image/jpeg", transparent: "false", time: date,
-    srs: "EPSG:4326", bbox: "-180,-90,180,90", width: "2048", height: "1024"
-  });
-  return `${NASA_WMS}?${params.toString()}`;
-}
 
 function utcDate(daysAgo = 1) {
   const value = new Date();
@@ -36,7 +27,9 @@ export default function EarthExplorer() {
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
   const materialRef = useRef(null);
-  const textureLoaderRef = useRef(null);
+  const textureWorkerRef = useRef(null);
+  const textureCacheRef = useRef(new Map());
+  const requestIdRef = useRef(0);
   const [selected, setSelected] = useState(0);
   const [date, setDate] = useState(utcDate());
   const [spinning, setSpinning] = useState(false);
@@ -87,9 +80,6 @@ export default function EarthExplorer() {
     starGeometry.setAttribute("position", new THREE.BufferAttribute(stars, 3));
     scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xb7cae1, size: 0.018, transparent: true, opacity: 0.62 })));
 
-    const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin("anonymous");
-    textureLoaderRef.current = loader;
     const resize = () => {
       const width = mount.clientWidth;
       const height = mount.clientHeight;
@@ -108,35 +98,113 @@ export default function EarthExplorer() {
     };
     animate();
     return () => {
+      requestIdRef.current += 1;
+      textureWorkerRef.current?.terminate();
+      textureWorkerRef.current = null;
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.dispose();
+      material.map?.dispose();
       renderer.dispose();
       starGeometry.dispose();
+      textureCacheRef.current.clear();
       mount.removeChild(renderer.domElement);
     };
   }, []);
 
-  const applyTexture = useCallback((requestedDate) => {
-    const loader = textureLoaderRef.current;
+  const swapTexture = useCallback((texture, message) => {
     const material = materialRef.current;
-    if (!loader || !material) return;
-    setStatus("Loading NASA observation…");
-    const useTexture = (texture, message) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      const previous = material.map;
-      material.map = texture;
-      material.needsUpdate = true;
-      previous?.dispose();
-      setStatus(message);
-    };
-    loader.load(
-      observationUrl(requestedDate),
-      (texture) => useTexture(texture, `NASA VIIRS · ${requestedDate}`),
-      undefined,
-      () => loader.load(FALLBACK_TEXTURE, (texture) => useTexture(texture, "Satellite fallback shown"))
-    );
+    if (!material) {
+      texture.dispose();
+      return;
+    }
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const previous = material.map;
+    material.map = texture;
+    material.needsUpdate = true;
+    previous?.dispose();
+    setStatus(message);
   }, []);
+
+  const applyBaseFallback = useCallback((requestId) => {
+    const loader = new THREE.TextureLoader();
+    const baseUrl = new URL(BASE_TEXTURE_PATH, document.baseURI).href;
+    loader.load(baseUrl, (texture) => {
+      if (!isLatestTextureResponse(requestId, requestIdRef.current)) {
+        texture.dispose();
+        return;
+      }
+      swapTexture(texture, "Base Earth fallback");
+    }, undefined, () => {
+      if (isLatestTextureResponse(requestId, requestIdRef.current)) setStatus("Earth texture unavailable");
+    });
+  }, [swapTexture]);
+
+  const applyTexture = useCallback((requestedDate) => {
+    if (!materialRef.current) return;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    textureWorkerRef.current?.terminate();
+    textureWorkerRef.current = null;
+
+    const cached = textureCacheRef.current.get(requestedDate);
+    if (cached) {
+      const texture = new THREE.CanvasTexture(cached.canvas);
+      swapTexture(texture, cached.status);
+      return;
+    }
+
+    setStatus("Building NASA Earth composite…");
+    let worker;
+    try {
+      worker = new Worker(new URL("../workers/earth-texture.worker.js", import.meta.url), { type: "module" });
+    } catch {
+      applyBaseFallback(requestId);
+      return;
+    }
+    textureWorkerRef.current = worker;
+    worker.onmessage = (event) => {
+      const response = event.data;
+      if (!isLatestTextureResponse(response.requestId, requestIdRef.current)) {
+        response.bitmap?.close();
+        return;
+      }
+      worker.terminate();
+      if (textureWorkerRef.current === worker) textureWorkerRef.current = null;
+      if (response.error || !response.bitmap) {
+        applyBaseFallback(requestId);
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = response.width;
+      canvas.height = response.height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        response.bitmap.close();
+        applyBaseFallback(requestId);
+        return;
+      }
+      context.drawImage(response.bitmap, 0, 0);
+      response.bitmap.close();
+      const cache = textureCacheRef.current;
+      if (cache.size >= MAX_CACHED_DATES) cache.delete(cache.keys().next().value);
+      cache.set(requestedDate, { canvas, status: response.status, metrics: response.metrics });
+      const texture = new THREE.CanvasTexture(canvas);
+      swapTexture(texture, response.status);
+    };
+    worker.onerror = (event) => {
+      event.preventDefault();
+      if (!isLatestTextureResponse(requestId, requestIdRef.current)) return;
+      worker.terminate();
+      if (textureWorkerRef.current === worker) textureWorkerRef.current = null;
+      applyBaseFallback(requestId);
+    };
+    worker.postMessage({
+      requestId,
+      date: requestedDate,
+      baseTextureUrl: new URL(BASE_TEXTURE_PATH, document.baseURI).href
+    });
+  }, [applyBaseFallback, swapTexture]);
 
   useEffect(() => applyTexture(date), [date, applyTexture]);
 
