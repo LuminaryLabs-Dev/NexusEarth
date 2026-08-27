@@ -3,3 +3,8 @@ node_modules
 out
 .DS_Store
 npm-debug.log*
+public/cesium
+evidence
+.cache
+public/data/search/places.json
+public/data/boundaries/admin.geojson

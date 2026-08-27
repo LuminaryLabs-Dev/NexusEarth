@@ -1,35 +1,58 @@
 # Nexus Earth
 
-Interactive 3D Earth explorer using recent NASA VIIRS true-color imagery.
+A terrain-enabled, searchable 3D Earth explorer built with Next.js and CesiumJS.
 
-Nexus Earth composites three sources into one seamless 2048×1024 globe texture in a browser worker:
+The deployed application is fully static. The browser streams only the terrain and imagery tiles needed by the current camera, while local data guarantees that the planet and search interface continue to work when a live service fails.
 
-1. A local complete Earth base texture.
-2. Dated global NOAA-20 VIIRS imagery from NASA GIBS in EPSG:4326.
-3. Matching Antarctic imagery from NASA GIBS in EPSG:3031.
+## Features
 
-Missing satellite pixels fall through to the base Earth. The Antarctic projection is reprojected into the global texture and blended between 55°S and 62°S before Three.js receives a single texture.
+- WGS84 CesiumJS globe with complete polar rendering
+- Open 30 m global terrain from Mapterhorn/Copernicus DEM, with ellipsoid fallback
+- Complete local NASA Blue Marble atlas fallback
+- Dated NASA GIBS imagery with NOAA-20, NOAA-21, Suomi NPP, MODIS, and date fallbacks
+- Atlas, Current satellite, Terrain relief, and Night Earth base modes
+- Borders, clouds, fires, snow/ice, and land-cover overlays
+- Bundled search across 15,000 cities, countries, regions, landmarks, and coordinates
+- Click-to-inspect coordinates, terrain, country, nearest place, source, and date
+- Visible source attribution and honest unavailable states
+
+The AI observations layer is intentionally disabled until versioned analysis tiles exist with model, date, processing, and confidence metadata. No browser-side foundation model or public geocoder is used.
 
 ## Run locally
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-## Build
-
-```bash
-npm run build
-```
-
-The app exports to `out/` and deploys automatically to GitHub Pages after every push to `main`.
-
-## Validation
+## Validate and build
 
 ```bash
 npm test
 npm run build
 ```
 
-The base texture is the Three.js r180 example Earth texture. Live observation imagery is provided by NASA Global Imagery Browse Services (GIBS).
+`prebuild` generates the bundled GeoNames/Natural Earth data, copies Cesium workers and runtime assets to `public/cesium/`, and retains a committed search seed if an upstream download is temporarily unavailable. Next.js exports the static site to `out/` under the production `/NexusEarth/` base path. The existing GitHub Pages workflow deploys it after every push to `main`.
+
+## Data preparation
+
+The committed search index is generated from GeoNames `cities15000` and Natural Earth country boundaries:
+
+```bash
+npm run data:search -- \
+  --cities path/to/cities15000.txt \
+  --admin1 path/to/admin1CodesASCII.txt \
+  --boundaries path/to/admin.geojson
+```
+
+`data-pipeline/` contains reproducible GDAL entry points and the approved source priority for a future self-hosted polar-safe atlas and quantized terrain set. Large source scenes and generated tiles belong in versioned object storage, not this repository.
+
+## Sources
+
+- CesiumJS — Apache-2.0
+- NASA Blue Marble and NASA GIBS
+- Mapterhorn / Copernicus DEM GLO-30
+- GeoNames — CC BY 4.0
+- Natural Earth — public domain
+
+See `public/data/earth-layer-manifest.json` for each runtime layer’s provider, attribution, date behavior, legend, zoom range, inspection method, and fallback chain.

@@ -1,0 +1,23 @@
+version: 1
+atlas:
+  base: NASA Blue Marble Next Generation
+  land: Copernicus Sentinel-2 Global Mosaic
+  arctic: NASA GIMP
+  antarctica: USGS/NASA LIMA
+  south_pole_fill: MODIS Mosaic of Antarctica
+terrain:
+  base: GEBCO 2025
+  land: Copernicus DEM GLO-30
+  arctic: ArcticDEM
+  antarctica: REMA
+runtime:
+  terrain_tiles: https://tiles.mapterhorn.com/{z}/{x}/{y}.webp
+  current_imagery: https://gibs.earthdata.nasa.gov/wmts/epsg4326/best
+analysis:
+  optional_inputs:
+    - Major-TOM Core-S2L2A
+    - NASA Harmonized Landsat Sentinel-2
+  optional_model: IBM/NASA Prithvi-EO-2.0-300M
+license_notes:
+  - Do not publish source scenes without retaining their attribution and license metadata.
+  - AI outputs require model version, observation dates, confidence, and processing date.
