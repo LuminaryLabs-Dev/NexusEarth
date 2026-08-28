@@ -8,13 +8,16 @@
     "dev": "next dev",
     "prebuild": "node scripts/data/prepare-runtime-data.mjs && node scripts/copy-cesium-assets.mjs",
     "build": "next build",
+    "postbuild": "node scripts/validate-static-chunks.mjs",
     "start": "next start",
     "test": "node --test",
     "data:search": "node scripts/data/build-search-index.mjs",
     "data:manifest": "node data-pipeline/build-manifest.mjs"
   },
   "dependencies": {
-    "cesium": "^1.137.0",
+    "@cesium/engine": "22.2.0",
+    "@cesium/widgets": "14.2.0",
+    "cesium": "1.137.0",
     "fflate": "^0.8.2",
     "next": "15.5.24",
     "react": "19.1.1",

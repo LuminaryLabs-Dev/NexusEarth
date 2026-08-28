@@ -32,7 +32,7 @@ npm test
 npm run build
 ```
 
-`prebuild` generates the bundled GeoNames/Natural Earth data, copies Cesium workers and runtime assets to `public/cesium/`, and retains a committed search seed if an upstream download is temporarily unavailable. Next.js exports the static site to `out/` under the production `/NexusEarth/` base path. The existing GitHub Pages workflow deploys it after every push to `main`.
+`prebuild` generates the bundled GeoNames/Natural Earth data, copies Cesium workers and runtime assets to `public/cesium/`, and retains a committed search seed if an upstream download is temporarily unavailable. Next.js exports the static site to `out/` under the production `/NexusEarth/` base path. The Cesium engine and widgets are pinned to matching releases, and `postbuild` parse-checks every generated JavaScript chunk before the existing GitHub Pages workflow can deploy it from `main`.
 
 ## Data preparation
 
